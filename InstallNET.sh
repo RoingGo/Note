@@ -665,6 +665,7 @@ cp -f '/net.bat' './net.bat'; \
 /sbin/reboot; \
 umount /media || true; \
 
+d-i partman-partitioning/default_label string gpt
 d-i partman/default_filesystem string xfs
 d-i partman-partitioning/confirm_write_new_label boolean true
 d-i partman/mount_style select uuid
