@@ -38,6 +38,7 @@ export GRUBVER=''
 export VER=''
 export setCMD=''
 export setConsole=''
+export useDiskNumber='1'
 
 while [[ $# -ge 1 ]]; do
   case $1 in
@@ -78,6 +79,11 @@ while [[ $# -ge 1 ]]; do
     -i|--interface)
       shift
       interfaceSelect="$1"
+      shift
+      ;;
+    --disk)
+      shift
+      useDiskNumber="$1"
       shift
       ;;
     --ip-addr)
@@ -148,13 +154,44 @@ while [[ $# -ge 1 ]]; do
       ;;
     *)
       if [[ "$1" != 'error' ]]; then echo -ne "\nInvaild option: '$1'\n\n"; fi
-      echo -ne " Usage:\n\tbash $(basename $0)\t-d/--debian [\033[33m\033[04mdists-name\033[0m]\n\t\t\t\t-u/--ubuntu [\033[04mdists-name\033[0m]\n\t\t\t\t-c/--centos [\033[04mdists-name\033[0m]\n\t\t\t\t-v/--ver [32/i386|64/\033[33m\033[04mamd64\033[0m] [\033[33m\033[04mdists-verison\033[0m]\n\t\t\t\t--ip-addr/--ip-gate/--ip-mask\n\t\t\t\t-apt/-yum/--mirror\n\t\t\t\t-dd/--image\n\t\t\t\t-p [linux password]\n\t\t\t\t-port [linux ssh port]\n"
+      echo -ne " Usage:\n\tbash $(basename $0)\t-d/--debian [\033[33m\033[04mdists-name\033[0m]\n\t\t\t\t-u/--ubuntu [\033[04mdists-name\033[0m]\n\t\t\t\t-c/--centos [\033[04mdists-name\033[0m]\n\t\t\t\t-v/--ver [32/i386|64/\033[33m\033[04mamd64\033[0m] [\033[33m\033[04mdists-verison\033[0m]\n\t\t\t\t--disk [useDiskNumber]\n\t\t\t\t--ip-addr/--ip-gate/--ip-mask\n\t\t\t\t-apt/-yum/--mirror\n\t\t\t\t-dd/--image\n\t\t\t\t-p [linux password]\n\t\t\t\t-port [linux ssh port]\n"
       exit 1;
       ;;
     esac
   done
 
 [[ "$EUID" -ne '0' ]] && echo "Error:This script must be run as root!" && exit 1;
+
+function useDiskInfo () {
+  echo -ne "\n\tRaw lsblk output:\n"
+  lsblk
+  
+  disk_list=$(lsblk | sed 's/[[:space:]]*$//g' | grep "disk$" | cut -d' ' -f1 | grep -v "fd[0-9]*\|sr[0-9]*")
+  readarray -t disk_array <<< "$disk_list"
+  
+  echo -ne "\n\tAvailable disks:\n"
+  for i in "${!disk_array[@]}"; do
+      echo "[/dev/${disk_array[$i]}]--->Number: $((i + 1))"
+  done
+
+  if [[ ! "$useDiskNumber" =~ ^[0-9]+$ ]] || [[ "$useDiskNumber" -lt 1 ]] || [[ "$useDiskNumber" -gt "${#disk_array[@]}" ]]; then
+      echo -ne "\nInvalid input. Please enter a valid line number between 1 and ${#disk_array[@]}.\n"
+      exit 1
+  fi
+  selected_disk=${disk_array[$((useDiskNumber - 1))]}
+  echo "You have selected disk: /dev/$selected_disk"
+  read -p "Are you sure you want to proceed with this disk? default? (y/n, default: y): " confirm_selected_disk
+  confirm_selected_disk=${confirm_selected_disk:-y}
+
+  if [[ "$confirm_selected_disk" != "y" && "$confirm_selected_disk" != "Y" ]]; then
+      echo "Operation cancelled."
+      echo -ne "You can use the argument --disk [ 1-${#disk_array[@]} ] to specify the disk directly next time.\n"
+      exit 1
+  fi
+  
+  echo "Proceeding with the selected disk (/dev/$selected_disk)..."
+}
+useDiskInfo
 
 function dependence(){
   Full='0';
@@ -242,7 +279,7 @@ function getInterface(){
 }
 
 function getDisk(){
-  disks=`lsblk | sed 's/[[:space:]]*$//g' |grep "disk$" |cut -d' ' -f1 |grep -v "fd[0-9]*\|sr[0-9]*" |head -n1`
+  disks=`lsblk | sed 's/[[:space:]]*$//g' |grep "disk$" |cut -d' ' -f1 |grep -v "fd[0-9]*\|sr[0-9]*" |sed -n "$useDiskNumber"p`
   [ -n "$disks" ] || echo ""
   echo "$disks" |grep -q "/dev"
   [ $? -eq 0 ] && echo "$disks" || echo "/dev/$disks"
@@ -656,9 +693,9 @@ d-i clock-setup/ntp boolean false
 
 d-i preseed/early_command string anna-install libfuse2-udeb fuse-udeb ntfs-3g-udeb libcrypto1.1-udeb libpcre2-8-0-udeb libssl1.1-udeb libuuid1-udeb zlib1g-udeb wget-udeb
 d-i partman/early_command string [[ -n "\$(blkid -t TYPE='vfat' -o device)" ]] && umount "\$(blkid -t TYPE='vfat' -o device)"; \
-debconf-set partman-auto/disk "\$(list-devices disk |head -n1)"; \
-wget -qO- '$DDURL' |gunzip -dc |/bin/dd of=\$(list-devices disk |head -n1); \
-mount.ntfs-3g \$(list-devices partition |head -n1) /mnt; \
+debconf-set partman-auto/disk "\$(list-devices disk |sed -n ${useDiskNumber}p)"; \
+wget -qO- '$DDURL' |gunzip -dc |/bin/dd of=\$(list-devices disk |sed -n ${useDiskNumber}p); \
+mount.ntfs-3g \$(list-devices partition |sed -n ${useDiskNumber}p) /mnt; \
 cd '/mnt/ProgramData/Microsoft/Windows/Start Menu/Programs'; \
 cd Start* || cd start*; \
 cp -f '/net.bat' './net.bat'; \
