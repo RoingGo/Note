@@ -166,7 +166,7 @@ function useDiskInfo () {
   echo -ne "\n\tRaw lsblk output:\n"
   lsblk
   
-  disk_list=$(lsblk | sed 's/[[:space:]]*$//g' | grep "disk$" | cut -d' ' -f1 | grep -v "fd[0-9]*\|sr[0-9]*")
+  disk_list=$(lsblk -d -n -o NAME,TYPE | grep "disk" | awk '{print $1}' | grep -v "^fd\|^sr\|^loop")
   readarray -t disk_array <<< "$disk_list"
   
   echo -ne "\n\tAvailable disks:\n"
@@ -279,10 +279,9 @@ function getInterface(){
 }
 
 function getDisk(){
-  disks=`lsblk | sed 's/[[:space:]]*$//g' |grep "disk$" |cut -d' ' -f1 |grep -v "fd[0-9]*\|sr[0-9]*" |sed -n "$useDiskNumber"p`
-  [ -n "$disks" ] || echo ""
-  echo "$disks" |grep -q "/dev"
-  [ $? -eq 0 ] && echo "$disks" || echo "/dev/$disks"
+  disks=$(lsblk -d -n -o NAME,TYPE | grep "disk" | awk '{print $1}' | grep -v "^fd\|^sr\|^loop" | sed -n "${useDiskNumber}p")
+  [ -n "$disks" ] || return
+  echo "$disks" | grep -q "^/dev/" && echo "$disks" || echo "/dev/$disks"
 }
 
 function diskType(){
